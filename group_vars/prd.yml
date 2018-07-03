@@ -1,0 +1,120 @@
+aws_region: us-east-1
+
+ec2_ssh_key: my_aws_ssh_key
+
+# Details of the VPC
+vpc_name: prd-ansible-vpc
+vpc_env: PRD
+vpc_tenancy: default
+vpc_cidr: 10.0.0.0/16
+
+# A map of the subnets in the VPC
+vpc_subnets:
+  public-a:
+    cidr: 10.0.2.0/24
+    az: "{{ aws_region }}a"
+    name: application-public-a
+  public-b:
+    cidr: 10.0.4.0/24
+    az: "{{ aws_region }}b"
+    name: application-public-b
+
+rt_name: "{{ vpc_name }}-public"
+
+#  Security groups for the VPC
+vpc_security_groups:
+  - name: vpc
+    description: "Allow internal traffic in the VPC"
+    rules:
+      - proto: all
+        group_name: vpc
+        ports: all
+  - name: allow-public-http
+    description: "Allow public web traffic"
+    rules:
+      - proto: tcp
+        cidr_ip: 0.0.0.0/0
+        ports:
+          - 80
+          - 443
+
+# Configuration for Application Load Balancer and Target Group
+alb:
+  target_group:
+    name: ansible-application-tg
+    protocol: http
+    port: 80
+    health_check_path: /phpinfo.php
+    successful_response_codes: "200-299"
+    healthy_threshold_count: 3
+    health_check_interval: 60
+    health_check_timeout: 30
+    unhealthy_threshold_count: 3
+
+alb_external:
+  - name: ansible-application-alb
+    security_groups:
+      - "{{ vpc_security_group_ids['vpc'] }}"
+      - "{{ vpc_security_group_ids['allow-public-http'] }}"
+    subnets:
+      - "{{ vpc_subnet_ids['application-public-a'] }}"
+      - "{{ vpc_subnet_ids['application-public-b'] }}"
+    scheme: internet-facing
+    listeners:
+      - Protocol: HTTPS
+        Port: 443
+        # The security policy that defines which ciphers and protocols are supported.
+        # The default is the current predefined security policy.
+        SslPolicy: ELBSecurityPolicy-2016-08
+        Certificates:
+          - CertificateArn: "{{ acm_facts.certificates[0].certificate_arn }}"
+        DefaultActions:
+          - Type: forward
+            TargetGroupName: "{{ alb.target_group.name }}"
+
+# Route53 DNS entry for the external application load balancer
+route53:
+  zone: mywebsite.com
+  record: www.mywebsite.com
+  type: A
+  # value: "{{ alb_result.dns_name }}"
+
+# Launch Configuration and EC2 Auto Scaling
+ec2_as_launch_config:
+  - name: ansible-application-lc
+    image_id: ami-b70554c8
+    security_groups:
+      - "{{ vpc_security_group_ids['vpc'] }}"
+      - "{{ vpc_security_group_ids['allow-public-http'] }}"
+    instance_type: t2.micro
+    user_data: |
+               #!/bin/bash
+               yum update -y
+               amazon-linux-extras install -y lamp-mariadb10.2-php7.2 php7.2
+               yum install -y httpd mariadb-server
+               systemctl start httpd
+               systemctl enable httpd
+               usermod -a -G apache ec2-user
+               chown -R ec2-user:apache /var/www
+               chmod 2775 /var/www
+               find /var/www -type d -exec chmod 2775 {} \;
+               find /var/www -type f -exec chmod 0664 {} \;
+               echo "<?php phpinfo(); ?>" > /var/www/html/phpinfo.php
+    volumes:
+    - device_name: /dev/xvda
+      volume_size: 8
+      volume_type: gp2
+
+ec2_as_group:
+  - name: ansible-application-asg
+    # launch_config_name: "{{ ec2_as_launch_config.name }}"
+    target_group_arns: "{{ alb_target_group_arn }}"
+    vpc_zone_identifier:
+      - "{{ vpc_subnet_ids['application-public-a'] }}"
+      - "{{ vpc_subnet_ids['application-public-b'] }}"
+    health_check_type: ELB
+    health_check_period: 60
+    wait_timeout: 120
+    desired_capacity: 2
+    min_size: 2
+    max_size: 2

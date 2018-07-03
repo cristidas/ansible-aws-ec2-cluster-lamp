@@ -1,0 +1,37 @@
+---
+- debug:
+    msg: "{{ alb }}"
+
+- elb_target_group:
+    name: "{{ item.value.name }}"
+    protocol: "{{ item.value.protocol }}"
+    port: "{{ item.value.port }}"
+    vpc_id: "{{ vpc_id }}"
+    health_check_path: "{{ item.value.health_check_path }}"
+    successful_response_codes: "{{ item.value.successful_response_codes }}"
+    healthy_threshold_count: "{{ item.value.healthy_threshold_count }}"
+    health_check_interval: "{{ item.value.health_check_interval }}"
+    health_check_timeout: "{{ item.value.health_check_timeout }}"
+    unhealthy_threshold_count: "{{ item.value.unhealthy_threshold_count }}"
+    state: present
+  with_dict: "{{ alb }}"
+  register: elb_target_group
+
+- set_fact:
+    alb_target_group_arn: "{{ item.target_group_arn }}"
+  with_items: "{{ elb_target_group.results }}"
+
+- elb_application_lb:
+#    access_logs_enabled: yes
+#    access_logs_s3_bucket: mybucket
+#    access_logs_s3_prefix: "/logs"
+    name: "{{ item.name}}"
+    security_groups: "{{ item.security_groups }}"
+    subnets: "{{ item.subnets }}"
+    scheme: "{{ item.scheme }}"
+    purge_listeners: yes
+    listeners: "{{ item.listeners }}"
+    deletion_protection: yes
+    state: present
+  loop: "{{ alb_external }}"
+  register: alb_result

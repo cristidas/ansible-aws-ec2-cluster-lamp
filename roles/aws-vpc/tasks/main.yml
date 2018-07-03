@@ -1,0 +1,57 @@
+---
+- name: Create VPC
+  ec2_vpc_net:
+    name: "{{ vpc_name }}"
+    cidr_block: "{{ vpc_cidr }}"
+    tenancy: "{{ vpc_tenancy }}"
+    state: present
+    tags:
+      Environment: "{{ vpc_env }}"
+  register: vpc_facts
+
+- name: Create Internet Gateway
+  ec2_vpc_igw:
+    vpc_id: "{{ vpc_facts.vpc.id }}"
+    region: "{{ aws_region }}"
+    state: present
+  register: igw_facts
+
+- name:  Create subnet
+  ec2_vpc_subnet:
+    vpc_id: "{{ vpc_facts.vpc.id }}"
+    az: "{{ item.value.az }}"
+    cidr: "{{ item.value.cidr }}"
+    map_public: yes
+    state: present
+    tags:
+      Name: "{{ item.value.name }}"
+  with_dict: "{{ vpc_subnets }}"
+  register: subnet_facts
+
+- name: Set fact for the VPC subnet IDs
+  set_fact:
+    vpc_subnet_ids: "{{ vpc_subnet_ids | default({}) | combine({ item.item.key: item.subnet.id }) }}"
+  loop: "{{ subnet_facts.results }}"
+
+- name: Setup VPC security groups
+  ec2_group:
+    name: "{{ item.name }}"
+    description: "{{ item.description }}"
+    vpc_id: "{{ vpc_facts.vpc.id }}"
+    rules: "{{ item.rules }}"
+  loop: "{{ vpc_security_groups }}"
+
+- debug:
+    msg: "{{ vpc_subnet_ids }}"
+
+- name: Setup route table for public subnets
+  ec2_vpc_route_table:
+    vpc_id: "{{ vpc_facts.vpc.id }}"
+    subnets:
+      - "{{ vpc_subnet_ids['public-a'] }}"
+      - "{{ vpc_subnet_ids['public-b'] }}"
+    routes:
+     - dest: 0.0.0.0/0
+       gateway_id: "{{ igw_facts.gateway_id }}"
+    tags:
+      Name: "{{ rt_name }}"

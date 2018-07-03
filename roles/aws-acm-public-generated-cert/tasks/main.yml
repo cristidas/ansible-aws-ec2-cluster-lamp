@@ -1,0 +1,31 @@
+---
+- name: Retrieve certificate facts
+  aws_acm_facts:
+    name: "*.opensourcesolutions.net"
+  register: acm_facts
+
+- name: Create new certificate
+  shell: aws acm request-certificate --domain-name *.opensourcesolutions.net --validation-method DNS --idempotency-token firstcert
+  when: not acm_facts.certificates[0].certificate_arn
+
+- name: Retrieve certificate facts
+  aws_acm_facts:
+    name: "*.opensourcesolutions.net"
+  register: acm_facts
+  # when: not acm_facts.certificates[0].certificate_arn
+
+- name: Get the CNAME Name for the Hosted Zone
+  shell: aws acm describe-certificate --certificate-arn arn:aws:acm:us-east-1:360082284429:certificate/d12ffebe-b956-48c6-b67b-1c3fb6cd891f | jq -r '.Certificate.DomainValidationOptions | .[].ResourceRecord | .Name'
+  register: acm_cname_name
+
+- name: Get the CNAMe Value for the Hosted Zone
+  shell: aws acm describe-certificate --certificate-arn arn:aws:acm:us-east-1:360082284429:certificate/d12ffebe-b956-48c6-b67b-1c3fb6cd891f | jq -r '.Certificate.DomainValidationOptions | .[].ResourceRecord | .Value'
+  register: acm_cname_value
+
+- name: Add certificate CNAME
+  route53:
+    zone: opensourcesolutions.net
+    record: "{{ acm_cname_name.stdout }}"
+    type: CNAME
+    value: "{{ acm_cname_value.stdout }}"
+    state: present

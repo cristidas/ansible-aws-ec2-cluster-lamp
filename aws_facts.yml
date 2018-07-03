@@ -1,0 +1,10 @@
+---
+- hosts: localhost
+  connection: local
+  gather_facts: False
+
+  vars_files:
+    - group_vars/prd.yml
+
+  roles:
+    - aws-vpc-facts

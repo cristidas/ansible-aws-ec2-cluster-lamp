@@ -1,0 +1,14 @@
+---
+- hosts: localhost
+  connection: local
+  gather_facts: False
+
+  vars_files:
+    - group_vars/prd.yml
+
+  roles:
+    - aws-vpc-facts
+    - aws-acm-public-generated-cert
+    - aws-alb
+    - aws-route53
+    - aws-ec2-auto-scaling

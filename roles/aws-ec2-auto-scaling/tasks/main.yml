@@ -1,0 +1,40 @@
+---
+- name: Create launch config
+  ec2_lc:
+    name: "{{ item.name }}"
+    image_id: "{{ item.image_id }}"
+    key_name: "{{ ec2_ssh_key }}"
+    region: "{{ aws_region }}"
+    security_groups: "{{ item.security_groups }}"
+    instance_type: "{{ item.instance_type }}"
+    user_data: "{{ item.user_data }}"
+    volumes: "{{ item.volumes }}"
+    assign_public_ip: yes
+  loop: "{{ ec2_as_launch_config }}"
+  register: ec2_lc_result
+
+- set_fact:
+    ec2_lc_name: "{{ item.name }}"
+  with_items: "{{ ec2_lc_result.results }}"
+
+- name: Configure Auto Scaling Group and perform rolling deploy
+  ec2_asg:
+    region: "{{ aws_region }}"
+    name: "{{ item.name }}"
+    launch_config_name: "{{ ec2_lc_name }}"
+    target_group_arns: "{{ item.target_group_arns }}"
+    vpc_zone_identifier: "{{ item.vpc_zone_identifier }}"
+    health_check_type: "{{ item.health_check_type }}"
+    health_check_period: "{{ item.health_check_period }}"
+    wait_timeout: "{{ item.wait_timeout }}"
+    desired_capacity: "{{ item.desired_capacity }}"
+    # replace_all_instances: yes
+    # replace_batch_size: 1
+    min_size: "{{ item.min_size }}"
+    max_size: "{{ item.max_size }}"
+    # lc_check: yes
+    # replace_all_instances: no
+    state: present
+    wait_for_instances: no
+  loop: "{{ ec2_as_group }}"
+  register: asg_result

@@ -1,0 +1,11 @@
+---
+- route53:
+    state: present
+    zone: "{{ route53.zone }}"
+    record: "{{ route53.record }}"
+    type: "{{ route53.type }}"
+    value: "{{ item.dns_name }}"
+    alias: True
+    alias_hosted_zone_id: "{{ item.canonical_hosted_zone_id }}"
+    overwrite: yes
+  with_items: "{{ alb_result.results }}"
