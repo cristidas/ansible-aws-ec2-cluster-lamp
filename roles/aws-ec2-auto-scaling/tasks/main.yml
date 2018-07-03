@@ -10,6 +10,7 @@
     user_data: "{{ item.user_data }}"
     volumes: "{{ item.volumes }}"
     assign_public_ip: yes
+    state: present
   loop: "{{ ec2_as_launch_config }}"
   register: ec2_lc_result
 
